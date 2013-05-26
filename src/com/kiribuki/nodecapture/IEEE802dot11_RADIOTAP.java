@@ -1455,11 +1455,11 @@ public class IEEE802dot11_RADIOTAP
                 offset += field_length;
             }
  
-            System.out
-                .printf(
-                    "id=%d name=%s is_present=%d present_bitmap=0x%X optionsBitmap=0x%X pad=%d offset of next field=%d length=%d  \n",
-                    id, field.name(), is_present, present_bitmap, optionsBitmap, pad,
-                    offset, optionsLength[id]);
+            //System.out
+            //    .printf(
+            //        "id=%d name=%s is_present=%d present_bitmap=0x%X optionsBitmap=0x%X pad=%d offset of next field=%d length=%d  \n",
+            //        id, field.name(), is_present, present_bitmap, optionsBitmap, pad,
+            //        offset, optionsLength[id]);
         }
  
         /* TODO: hashcode? */

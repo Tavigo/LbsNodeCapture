@@ -19,7 +19,7 @@ public class SendPacketCapture {
 		}
 	}
 	
-	public boolean Send(PacketCapture packetcapture){
+	public boolean Send(PacketCapture packetcapture) {
 		Gson gson = new Gson();
 		String json = gson.toJson(packetcapture);
 		
@@ -27,7 +27,12 @@ public class SendPacketCapture {
 	
 		if (qs.SendMessage(json) == false ) {
 			System.out.println("Error enviando mensaje!!!");
-			System.exit(1); 
+			//System.exit(1);
+			try {
+				SetQueueName(lclQueueName);
+			} catch (Exception e) {
+				System.out.println(e.toString());
+			}
 		}
 	
 		return true;

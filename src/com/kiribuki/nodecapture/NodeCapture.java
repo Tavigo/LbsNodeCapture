@@ -1,9 +1,9 @@
 package com.kiribuki.nodecapture;
 
+import com.kiribuki.nodecapture.IEEE802dot11_RADIOTAP;
 import com.kiribuki.nodecapture.SendPacketCapture;
 
 import java.util.ArrayList;  
-import java.util.Date;  
 import java.util.List;  
 
 import org.jnetpcap.Pcap;  
@@ -23,6 +23,10 @@ public class NodeCapture {
 	static byte[] nodeMAC;
 	static float longitud=0;
 	static float latitud=0;
+	static int lenMAC=6;
+	static int fromPunter = 0;
+	static int toPunter = 0;
+	static int BSSIDPunter = 0;
 
 	/**
 	 * @param args
@@ -101,7 +105,7 @@ public class NodeCapture {
          
         PcapIf device = alldevs.get(numDis);   
         System.out  
-            .printf("\nDevice escogifo '%s'\n",  
+            .printf("\nDevice escogido para la captura '%s'\n",  
                 (device.getDescription() != null) ? device.getDescription()  
                     : device.getName());  
   
@@ -126,37 +130,170 @@ public class NodeCapture {
         PcapPacketHandler<SendPacketCapture> jpacketHandler = new PcapPacketHandler<SendPacketCapture>() { 
   
             public void nextPacket(PcapPacket packet, SendPacketCapture sendpacketcapture) {  
-            	/*
-                System.out.printf("Received packet at %s caplen=%-4d wirelen=%-4d\n",  
-                    new Date(packet.getCaptureHeader().timestampInMillis()),   
-                    packet.getCaptureHeader().caplen(),  // Length actually captured  
-                    packet.getCaptureHeader().wirelen() // Original length   
-                    );
-               */
-           	 
-            	 PacketCapture packetcapture = new PacketCapture(); 
-  	 
-            	  // Carga de los datos del paquete en el objeto packetcapture
-            	 packetcapture.SetFechaCaptura(new Date(packet.getCaptureHeader().timestampInMillis()));
-            	 packetcapture.SetNodeMAC(FormatUtils.mac(nodeMAC));
-            	 packetcapture.SetLongitud(longitud);
-            	 packetcapture.SetLatitud(latitud);
-             	 if (packet.getCaptureHeader().wirelen() > 34 ) {
-             		 packetcapture.SetfromMAC(FormatUtils.mac(packet.getByteArray(28,6)));
-             		 packetcapture.SetToMAC(FormatUtils.mac(packet.getByteArray(22,6)));
-             	 }
-             	 packetcapture.SetSignalHash(packet.getByteArray(18, packet.getCaptureHeader().wirelen()-18));
-            	 packetcapture.SetRSSI(packet.getByte(14));		
-            	 sendpacketcapture.Send(packetcapture);
-            	 packet.getCaptureHeader();
+  
+            	IEEE802dot11_RADIOTAP radiotap = new IEEE802dot11_RADIOTAP();
+            	int punter;
+            	// Si detectamos el header radiotap, extaremos los datos y enviamos el paquete a la cola
+            	if (packet.hasHeader(radiotap)) {
+            		//System.out.printf("Longitud capçalera: %d\n",radiotap.len());
+            		// punter, determina la longitud del Header Radiotap.Inmediatamente después 
+            		// esta situado el frame 802.11
+            		punter = radiotap.len();
+            		PacketCapture packetcapture = new PacketCapture();
+            		// Carga de los datos del paquete en el objeto packetcapture
+            		packetcapture.SetFechaCaptura(packet.getCaptureHeader().timestampInMillis());
+               	 	packetcapture.Setwirelen(packet.getCaptureHeader().wirelen());
+            		packetcapture.SetNodeMAC(FormatUtils.mac(nodeMAC));
+            		packetcapture.SetLongitud(longitud);
+            		packetcapture.SetLatitud(latitud);
+            		if (punter > 14) {
+               	 		packetcapture.SetRSSI(packet.getByte(14));
+               	 	}
+            		packetcapture.SetTipoFrame(packet.getByte(punter));
+            		
+            		byte[] FrameControl = packet.getByteArray(punter, 2);
+            		
+            		if (PunterosDirecciones(punter, FrameControl )) {
+            			if (fromPunter > 0) {
+            				packetcapture.SetToMAC(FormatUtils.mac(packet.getByteArray(toPunter,lenMAC)));
+            			}
+    					if (toPunter > 0) {
+    						packetcapture.SetfromMAC(FormatUtils.mac(packet.getByteArray(fromPunter,lenMAC)));
+    					}
+    					if (BSSIDPunter > 0) {
+    						packetcapture.SetBSSID(FormatUtils.mac(packet.getByteArray(BSSIDPunter,lenMAC)));
+            			}
+            		}
+               	 	packetcapture.SetSignalHash(packet.getByteArray(punter, packet.getCaptureHeader().wirelen()-punter));           	 
+               	 	sendpacketcapture.Send(packetcapture);
+            	}
             }  
-        };  
+        };
        
         SendPacketCapture sendpacketcapture = new SendPacketCapture();
         sendpacketcapture.SetQueueName(QueueName);
         pcap.loop(Pcap.LOOP_INFINITE, jpacketHandler, sendpacketcapture);    
         pcap.close();
+	}
+	
+	static public boolean PunterosDirecciones(int punter, byte[] FrameControl) {
+		boolean sw = true;
+		int offset = punter + 4;
+		toPunter = 0;
+		fromPunter = 0;
+		BSSIDPunter = 0;
 		
+		
+		StringBuffer sb = new StringBuffer();
+        for (int i = 0; i < FrameControl.length; i++) {
+	         sb.append(Integer.toString((FrameControl[i] & 0xff) + 0x100, 16).substring(1));
+	    }
+        System.out.println(sb.toString());
+		
+		
+		// Detectamos el tipo de frame, para extraer las direcciones MAC de origen y destino
+  		int tipo = ((byte)0b00000011 & (byte)FrameControl[0] >> 2);
+		
+		
+		switch (Integer.toBinaryString(tipo)) {
+			// Frame de administración
+			case "0":
+				fromPunter = offset + 1 * lenMAC;
+				toPunter =  offset;
+				BSSIDPunter = offset + 2 * lenMAC;
+				break;
+			// Frame de Control
+			case "1":			
+				int subTipo = ((byte)0b00001111 & (byte)FrameControl[0] >> 4);
+				switch (Integer.toBinaryString(subTipo)) {
+					// Block Acknowledgment Request (QoS)
+					// Block Acknowledgment (QoS)
+					// RTS
+					case "1000":	
+					case "1001":
+					case "1011":
+						fromPunter =offset + 1 * lenMAC; 
+						toPunter = offset;
+						BSSIDPunter = 0;
+						break;
+					// Power Save (PS)-Poll
+					case "1010":
+						fromPunter = offset + 1 * lenMAC;
+						toPunter = 0;
+						BSSIDPunter = offset;
+						break;
+					//CTS
+					// Acknowledgment (ACK)
+					case "1100":
+					case "1101":
+						fromPunter = offset;
+						toPunter = 0;
+						BSSIDPunter = 0;
+						break;
+					// Contention-Free (CF-End)
+					// CF-End + CF-Ack
+					case "1110":
+					case "1111":
+						fromPunter = 0;
+						toPunter = offset;
+						BSSIDPunter = offset + 1 * lenMAC;
+						break;
+					default:
+						sw = false;
+						System.out.println("AGG");
+						System.exit(1);
+						break;
+				}
+				break;
+			// Frame de Datos
+			case "10":
+				// En los frame de datos, dependiento de los subcampos ToDS y FromDS, los campos de
+				// dirección pueden tener un valor u otro
+				int DS =  ((byte)0b00000011 & (byte)FrameControl[1]);
+				System.out.printf("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! DS: %s\n", Integer.toBinaryString(DS));
+				switch (Integer.toBinaryString(DS)) {
+					//IBSS (ad-hoc)
+					case "0":
+						fromPunter = offset;
+						toPunter = offset  + 1 * lenMAC;
+						BSSIDPunter = offset + 2 * lenMAC;
+						break;
+					// Hacia AP (Infraestructura)
+					case "1":
+						fromPunter = offset + 1 * lenMAC;
+						toPunter = offset + 2 * lenMAC;
+						BSSIDPunter = offset;
+						break;
+					// Desde AP (Infraestructura)
+					case "10":
+						fromPunter = offset + 2 * lenMAC;
+						toPunter = offset;
+						BSSIDPunter = offset + 1 * lenMAC;
+						break;
+					//WDS bridge
+					case "11":
+						fromPunter = offset + 3 * lenMAC;
+						toPunter = offset + 2 * lenMAC;
+						BSSIDPunter = 0;
+						break;
+					default:
+						sw = false;
+						break;
+				}
+				break;
+			default:
+				sw = false;
+				break;
+		}
+		
+		
+		if ( !sw ) {
+			fromPunter = 0;
+			toPunter = 0;
+			BSSIDPunter = 0;
+			System.out.println("No funciona!");
+		}
+		return sw;
 	}
 	
 }
