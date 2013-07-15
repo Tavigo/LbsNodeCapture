@@ -432,7 +432,7 @@ public class IEEE802dot11_RADIOTAP
          * 
          * @param buffer
          *          the buffer
-         * @param offset
+         * @param offset 
          *          the offset
          * @return the header length
          */

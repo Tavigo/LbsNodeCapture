@@ -1,6 +1,7 @@
 package com.kiribuki.nodecapture;
 
 import com.kiribuki.nodecapture.IEEE802dot11_RADIOTAP;
+import com.kiribuki.nodecapture.IEEE802dot11_RADIOTAP.DataField_DBM_ANTENNA_SIGNAL;
 import com.kiribuki.nodecapture.SendPacketCapture;
 
 import java.util.ArrayList;  
@@ -132,6 +133,8 @@ public class NodeCapture {
             public void nextPacket(PcapPacket packet, SendPacketCapture sendpacketcapture) {  
   
             	IEEE802dot11_RADIOTAP radiotap = new IEEE802dot11_RADIOTAP();
+            	DataField_DBM_ANTENNA_SIGNAL RSSI = new DataField_DBM_ANTENNA_SIGNAL();
+            	
             	int punter;
             	// Si detectamos el header radiotap, extaremos los datos y enviamos el paquete a la cola
             	if (packet.hasHeader(radiotap)) {
@@ -139,6 +142,7 @@ public class NodeCapture {
             		// punter, determina la longitud del Header Radiotap.Inmediatamente después 
             		// esta situado el frame 802.11
             		punter = radiotap.len();
+            		            		
             		PacketCapture packetcapture = new PacketCapture();
             		// Carga de los datos del paquete en el objeto packetcapture
             		packetcapture.SetFechaCaptura(packet.getCaptureHeader().timestampInMillis());
@@ -146,12 +150,28 @@ public class NodeCapture {
             		packetcapture.SetNodeMAC(FormatUtils.mac(nodeMAC));
             		packetcapture.SetLongitud(longitud);
             		packetcapture.SetLatitud(latitud);
-            		if (punter > 14) {
-               	 		packetcapture.SetRSSI(packet.getByte(14));
-               	 	}
+            		
+            		if ((radiotap.present_AntennaSignal()==1) && (radiotap.hasSubHeader(RSSI)==true)) {
+            			packetcapture.SetRSSI(RSSI.DBM_ANTENNA_SIGNAL());
+            		}
+            		
             		packetcapture.SetTipoFrame(packet.getByte(punter));
             		
             		byte[] FrameControl = packet.getByteArray(punter, 2);
+            		
+            		
+            		
+            		
+            		
+            		if (punter + 4 + 3*lenMAC <= packet.getCaptureHeader().wirelen() ) {
+            			System.out.printf("%s %s %s\n", 
+            				    FormatUtils.mac(packet.getByteArray(punter + 4, lenMAC)),
+            				    		FormatUtils.mac(packet.getByteArray((punter + lenMAC + 4), lenMAC)), 
+            				    				FormatUtils.mac(packet.getByteArray((punter + 2 * lenMAC + 4 ), lenMAC)));
+            		}
+            		
+            		
+            		
             		
             		if (PunterosDirecciones(punter, FrameControl )) {
             			if (fromPunter > 0) {
@@ -260,15 +280,21 @@ public class NodeCapture {
 						break;
 					// Hacia AP (Infraestructura)
 					case "1":
+						//fromPunter = offset + 1 * lenMAC;
+						//toPunter = offset + 2 * lenMAC;
+						//BSSIDPunter = offset;
 						fromPunter = offset + 1 * lenMAC;
-						toPunter = offset + 2 * lenMAC;
-						BSSIDPunter = offset;
+						toPunter = offset;
+						BSSIDPunter = offset + 2 * lenMAC;
 						break;
 					// Desde AP (Infraestructura)
 					case "10":
-						fromPunter = offset + 2 * lenMAC;
+						//fromPunter = offset + 2 * lenMAC;
+						//toPunter = offset;
+						//BSSIDPunter = offset + 1 * lenMAC;
+						fromPunter = offset + 1 * lenMAC;
 						toPunter = offset;
-						BSSIDPunter = offset + 1 * lenMAC;
+						BSSIDPunter = offset + 2 * lenMAC;
 						break;
 					//WDS bridge
 					case "11":
